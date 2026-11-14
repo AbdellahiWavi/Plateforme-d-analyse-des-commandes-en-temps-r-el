@@ -1,37 +1,30 @@
-from flask import Flask, jsonify
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel 
 
-app = Flask(__name__)
+app = FastAPI(title="Customer Service", description="A simple customer service API", version="1.0.0")
+
+class Customer(BaseModel):
+    id: int
+    name: str
+    email: str
 
 customers = {
-    1: {
-        "id": 1,
-        "name": "Ahmed",
-        "email": "ahmed@gmail.com"
-    },
-    2: {
-        "id": 2,
-        "name": "Salah",
-        "email": "salah@gmail.com"
-    }
+    1: Customer(id=1, name="Ahmed", email="ahmed@gmail.com"),
+    2: Customer(id=2, name="Salah", email="salah@gmail.com")
 }
 
-@app.route("/")
+@app.get("/")
 def home():
-    return jsonify({
+    return {
         "service": "Customer Service",
         "status": "running"
-    })
+    }
 
-@app.route("/customers/<int:id>")
-def get_customer(id):
+@app.get("/customers/{id}")
+async def get_customer(id: int):
     customer = customers.get(id)
 
     if customer:
-        return jsonify(customer)
+        return customer
 
-    return jsonify({
-        "error": "Customer not found"
-    }), 404
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    raise HTTPException(status_code=404, detail="Customer not found")
