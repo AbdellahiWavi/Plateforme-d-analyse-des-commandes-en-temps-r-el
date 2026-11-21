@@ -1,0 +1,27 @@
+services:
+
+  customer-service:
+    build:
+      context: ./customer-service
+    container_name: customer-service
+    ports:
+      - "5001:5001"
+    networks:
+      - plateform-net
+
+  order-service:
+    build:
+      context: ./order-service
+    container_name: order-plateform
+    ports:
+      - "5002:5002"
+    environment:
+      CUSTOMER_SERVICE_URL: http://customer-service:5001
+    depends_on:
+      - customer-service
+    networks:
+      - plateform-net
+
+networks:
+  plateform-net:
+    driver: bridge
