@@ -1,0 +1,45 @@
+name: CI Pipeline
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  build-and-test:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Build Images
+        run: |
+          docker compose build
+
+      - name: Start Services
+        run: |
+          docker compose up -d
+
+      - name: Wait Services
+        run: sleep 15
+
+      - name: Test Customer Service
+        run: |
+          curl --fail http://localhost:5001/customers/1
+
+      - name: Test Order Service
+        run: |
+          curl --fail http://localhost:5002/orders/1
+
+      - name: Shutdown
+        if: always()
+        run: |
+          docker compose down
