@@ -5,7 +5,7 @@ services:
       context: ./customer-service
     container_name: customer-service
     ports:
-      - "5001:5001"
+      - "5001:5000"
     networks:
       - plateform-net
 
@@ -14,9 +14,9 @@ services:
       context: ./order-service
     container_name: order-plateform
     ports:
-      - "5002:5002"
+      - "5002:5000"
     environment:
-      CUSTOMER_SERVICE_URL: http://customer-service:5001
+      CUSTOMER_SERVICE_URL: http://customer-service:5000
     depends_on:
       - customer-service
     networks:
