@@ -1,3 +1,11 @@
+# Healthcheck commun aux services applicatifs (l'image python:slim n'a pas curl)
+x-app-healthcheck: &app-healthcheck
+  test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 20s
+
 services:
 
   customer-service:
@@ -7,6 +15,7 @@ services:
       - "5001:5000"
     environment:
       MONGO_URI: mongodb://mongo:27017
+    healthcheck: *app-healthcheck
     depends_on:
       mongo:
         condition: service_healthy
@@ -22,9 +31,10 @@ services:
       CUSTOMER_SERVICE_URL: http://customer-service:5000
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       MONGO_URI: mongodb://mongo:27017
+    healthcheck: *app-healthcheck
     depends_on:
       customer-service:
-        condition: service_started
+        condition: service_healthy
       kafka:
         condition: service_healthy
       mongo:
@@ -40,6 +50,7 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       MONGO_URI: mongodb://mongo:27017
+    healthcheck: *app-healthcheck
     depends_on:
       kafka:
         condition: service_healthy
