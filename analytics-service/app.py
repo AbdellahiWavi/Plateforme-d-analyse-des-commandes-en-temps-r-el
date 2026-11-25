@@ -1,12 +1,14 @@
 import json
 import logging
 import os
+import socket
 import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from kafka import KafkaConsumer
 from pymongo import MongoClient
 
@@ -16,6 +18,7 @@ log = logging.getLogger("analytics-service")
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 
+health_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)  # sondes : échec rapide
 db = MongoClient(MONGO_URI)["analytics_db"]
 global_col = db["global"]
 products_col = db["products"]
@@ -69,9 +72,14 @@ def consume() -> None:
             time.sleep(5)
 
 
+consumer_thread = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    threading.Thread(target=consume, daemon=True).start()
+    global consumer_thread
+    consumer_thread = threading.Thread(target=consume, daemon=True)
+    consumer_thread.start()
     yield
 
 
@@ -86,6 +94,44 @@ app = FastAPI(
 @app.get("/")
 def home():
     return {"service": "Analytics Service", "status": "running"}
+
+
+# ---------- Health checks ----------
+def mongo_status() -> str:
+    try:
+        health_client.admin.command("ping")
+        return "ok"
+    except Exception as e:
+        return f"error: {type(e).__name__}"
+
+def kafka_status() -> str:
+    """Test TCP simple vers le premier broker (indépendant de la version de la bibliothèque)."""
+    host, _, port = KAFKA_BOOTSTRAP_SERVERS.split(",")[0].partition(":")
+    try:
+        with socket.create_connection((host, int(port or 9092)), timeout=2):
+            return "ok"
+    except OSError as e:
+        return f"error: {type(e).__name__}"
+
+
+def consumer_status() -> str:
+    return "ok" if consumer_thread is not None and consumer_thread.is_alive() else "error: consumer not running"
+
+@app.get("/health")
+def health():
+    """Liveness : le processus répond."""
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+def ready():
+    """Readiness : les dépendances du service sont joignables."""
+    checks = {"mongo": mongo_status(), "kafka": kafka_status(), "consumer": consumer_status()}
+    ok = all(v == "ok" for v in checks.values())
+    return JSONResponse(
+        status_code=200 if ok else 503,
+        content={"status": "ready" if ok else "not_ready", "checks": checks},
+    )
 
 
 @app.get("/stats")

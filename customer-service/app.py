@@ -2,12 +2,14 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from pymongo import MongoClient, ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 
+health_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)  # sondes : échec rapide
 db = MongoClient(MONGO_URI)["customers_db"]
 customers_col = db["customers"]
 counters_col = db["counters"]
@@ -57,6 +59,32 @@ app = FastAPI(
 @app.get("/")
 def home():
     return {"service": "Customer Service", "status": "running"}
+
+
+# ---------- Health checks ----------
+def mongo_status() -> str:
+    try:
+        health_client.admin.command("ping")
+        return "ok"
+    except Exception as e:
+        return f"error: {type(e).__name__}"
+
+
+@app.get("/health")
+def health():
+    """Liveness : le processus répond."""
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+def ready():
+    """Readiness : les dépendances du service sont joignables."""
+    checks = {"mongo": mongo_status()}
+    ok = all(v == "ok" for v in checks.values())
+    return JSONResponse(
+        status_code=200 if ok else 503,
+        content={"status": "ready" if ok else "not_ready", "checks": checks},
+    )
 
 
 @app.post("/customers", response_model=Customer, status_code=201)

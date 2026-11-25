@@ -1,11 +1,13 @@
 import json
 import logging
 import os
+import socket
 import time
 from datetime import datetime, timezone
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from kafka import KafkaProducer
 from pydantic import BaseModel, Field
 from pymongo import MongoClient, ReturnDocument
@@ -13,10 +15,11 @@ from pymongo import MongoClient, ReturnDocument
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("order-service")
 
-CUSTOMER_SERVICE_URL = os.getenv("CUSTOMER_SERVICE_URL", "http://localhost:5000")
+CUSTOMER_SERVICE_URL = os.getenv("CUSTOMER_SERVICE_URL", "http://localhost:5001")
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 
+health_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)  # sondes : échec rapide
 db = MongoClient(MONGO_URI)["orders_db"]
 orders_col = db["orders"]
 counters_col = db["counters"]
@@ -93,6 +96,40 @@ def fetch_customer(customer_id: int) -> dict:
 @app.get("/")
 def home():
     return {"service": "Order Service", "status": "running"}
+
+
+# ---------- Health checks ----------
+def mongo_status() -> str:
+    try:
+        health_client.admin.command("ping")
+        return "ok"
+    except Exception as e:
+        return f"error: {type(e).__name__}"
+
+def kafka_status() -> str:
+    """Test TCP simple vers le premier broker (indépendant de la version de la bibliothèque)."""
+    host, _, port = KAFKA_BOOTSTRAP_SERVERS.split(",")[0].partition(":")
+    try:
+        with socket.create_connection((host, int(port or 9092)), timeout=2):
+            return "ok"
+    except OSError as e:
+        return f"error: {type(e).__name__}"
+
+@app.get("/health")
+def health():
+    """Liveness : le processus répond."""
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+def ready():
+    """Readiness : les dépendances du service sont joignables."""
+    checks = {"mongo": mongo_status(), "kafka": kafka_status()}
+    ok = all(v == "ok" for v in checks.values())
+    return JSONResponse(
+        status_code=200 if ok else 503,
+        content={"status": "ready" if ok else "not_ready", "checks": checks},
+    )
 
 
 @app.post("/orders", status_code=201)
