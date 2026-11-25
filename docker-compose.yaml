@@ -1,46 +1,64 @@
+# Healthcheck commun aux services applicatifs (l'image python:slim n'a pas curl)
+x-app-healthcheck: &app-healthcheck
+  test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 20s
+
 services:
 
   customer-service:
-    build:
-      context: ./customer-service
+    build: ./customer-service
     container_name: customer-service
-    environment:
-      PYTHONUNBUFFERED: "1"
     ports:
       - "5001:5000"
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+    healthcheck: *app-healthcheck
+    depends_on:
+      mongo:
+        condition: service_healthy
     networks:
       - plateform-net
 
   order-service:
-    build:
-      context: ./order-service
+    build: ./order-service
     container_name: order-service
     ports:
       - "5002:5000"
     environment:
       CUSTOMER_SERVICE_URL: http://customer-service:5000
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
-      PYTHONUNBUFFERED: "1"
+      MONGO_URI: mongodb://mongo:27017
+    healthcheck: *app-healthcheck
     depends_on:
       customer-service:
-        condition: service_started
+        condition: service_healthy
       kafka:
+        condition: service_healthy
+      mongo:
         condition: service_healthy
     networks:
       - plateform-net
 
   analytics-service:
-    build: 
-      context: ./analytics-service
+    build: ./analytics-service
     container_name: analytics-service
+    ports:
+      - "5003:5000"
     environment:
-      PYTHONUNBUFFERED: "1"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      MONGO_URI: mongodb://mongo:27017
+    healthcheck: *app-healthcheck
     depends_on:
       kafka:
         condition: service_healthy
+      mongo:
+        condition: service_healthy
     networks:
-      - plateform-net 
-  
+      - plateform-net
+
   kafka:
     image: apache/kafka:3.9.0
     container_name: kafka
@@ -65,8 +83,24 @@ services:
       timeout: 10s
       retries: 10
     networks:
-      - plateform-net 
+      - plateform-net
+
+  mongo:
+    image: mongo:7
+    container_name: mongo
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    networks:
+      - plateform-net
 
 networks:
   plateform-net:
     driver: bridge
+
+volumes:
+  mongo-data:

@@ -4,7 +4,6 @@ on:
   pull_request:
     branches:
       - main
-
   push:
     branches:
       - main
@@ -12,34 +11,69 @@ on:
 
 jobs:
   build-and-test:
-
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Build Images
-        run: |
-          docker compose build
+      - name: Build and Start Services
+        # --wait : attend que les services soient démarrés / healthy (Kafka, MongoDB)
+        # et échoue tout de suite si un conteneur plante
+        run: docker compose up -d --build --wait --wait-timeout 180
 
-      - name: Start Services
+      - name: Wait for APIs
         run: |
-          docker compose up -d
+          for port in 5001 5002 5003; do
+            curl --fail --silent --show-error \
+              --retry 20 --retry-delay 3 --retry-connrefused \
+              http://localhost:$port/ > /dev/null
+          done
 
-      - name: Wait Services
-        run: sleep 15
+      - name: Test Customer Service (seed data)
+        run: curl --fail http://localhost:5001/customers/1
 
-      - name: Test Customer Service
+      - name: Test Customer Registration
         run: |
-          curl --fail http://localhost:5001/customers/1
+          curl --fail -X POST http://localhost:5001/customers \
+            -H "Content-Type: application/json" \
+            -d '{"name": "CI User", "email": "ci@test.com"}'
 
-      - name: Test Order Service
+      - name: Test Order Creation and Retrieval
         run: |
-          curl --fail http://localhost:5002/orders/1
+          RESPONSE=$(curl --fail --silent -X POST http://localhost:5002/orders \
+            -H "Content-Type: application/json" \
+            -d '{"customer_id": 1, "product": "Laptop", "quantity": 2, "price": 900}')
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.event_published == true'
+          ORDER_ID=$(echo "$RESPONSE" | jq -r '.order_id')
+          curl --fail http://localhost:5002/orders/$ORDER_ID
+
+      - name: Test Order with Unknown Customer
+        run: |
+          CODE=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            -X POST http://localhost:5002/orders \
+            -H "Content-Type: application/json" \
+            -d '{"customer_id": 9999, "product": "Laptop"}')
+          test "$CODE" = "404"
+
+      - name: Test Analytics Received the Event
+        run: |
+          for i in $(seq 1 30); do
+            TOTAL=$(curl --silent http://localhost:5003/stats | jq -r '.total_orders')
+            if [ "${TOTAL:-0}" -ge 1 ] 2>/dev/null; then
+              echo "Analytics OK : $TOTAL order(s)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Analytics did not receive the event"
+          exit 1
+
+      - name: Show Logs on Failure
+        if: failure()
+        run: docker compose logs
 
       - name: Shutdown
         if: always()
-        run: |
-          docker compose down
+        run: docker compose down -v
