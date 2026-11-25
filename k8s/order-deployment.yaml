@@ -22,6 +22,11 @@ spec:
       containers:
       - name: order-service
         image: elwavi/order-service:latest
+        imagePullPolicy: Always
 
         ports:
         - containerPort: 5000
+
+        env:
+        - name: CUSTOMER_SERVICE_URL
+          value: "http://customer-service:5000"

@@ -22,6 +22,7 @@ spec:
       containers:
       - name: customer-service
         image: elwavi/customer-service:latest
+        imagePullPolicy: Always
 
         ports:
         - containerPort: 5000
