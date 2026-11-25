@@ -2,10 +2,14 @@ import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel 
 import httpx
+from kafka import KafkaProducer
+import json
+import time
 
 app = FastAPI(title="Order Service", description="A simple order service API", version="1.0.0")
 
 CUSTOMER_SERVICE_URL = os.getenv("CUSTOMER_SERVICE_URL", "http://localhost:5000")
+KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 
 
 class Order(BaseModel):
@@ -39,3 +43,45 @@ async def get_order(order_id: int):
         "product": order.product,
         "customer": customer
     }
+
+@app.post("/orders")
+def create_order():
+
+    order = {
+        "order_id": 101,
+        "customer_id": 1,
+        "product": "Laptop"
+    }
+
+    get_producer().send(
+        "orders",
+        {
+            "event": "OrderCreated",
+            **order
+        }
+    )
+
+    return order
+
+# producer = KafkaProducer(
+#     bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+#     value_serializer=lambda v: json.dumps(v).encode('utf-8')
+# )
+
+producer = None
+
+def get_producer():
+    global producer
+    if producer is None:
+        for _ in range(10):
+            try:
+                producer = KafkaProducer(
+                    bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+                    value_serializer=lambda v: json.dumps(v).encode("utf-8"),
+                )
+                break
+            except Exception:
+                time.sleep(3)
+        else:
+            raise RuntimeError("Kafka indisponible")
+    return producer
