@@ -59,6 +59,28 @@ services:
     networks:
       - plateform-net
 
+  insights-service:
+    build: ./insights-service
+    container_name: insights-service
+    ports:
+      - "5004:5000"
+    environment:
+      ANALYTICS_URL: http://analytics-service:5000
+      MONGO_URI: mongodb://mongo:27017
+      # Optionnels : sans clé, le service produit un rapport de secours (mode dégradé)
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
+      GROQ_REASONING_EFFORT: ${GROQ_REASONING_EFFORT:-low}
+      INSIGHTS_INTERVAL_SECONDS: ${INSIGHTS_INTERVAL_SECONDS:-900}
+    healthcheck: *app-healthcheck
+    depends_on:
+      analytics-service:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    networks:
+      - plateform-net
+
   kafka:
     image: apache/kafka:3.9.0
     container_name: kafka
