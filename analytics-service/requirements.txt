@@ -1,4 +1,4 @@
+fastapi
+uvicorn
 kafka-python
-fastapi==0.104.1
 pymongo
-uvicorn==0.24.0

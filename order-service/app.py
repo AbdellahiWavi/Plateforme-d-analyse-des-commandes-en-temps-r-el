@@ -15,7 +15,7 @@ from pymongo import MongoClient, ReturnDocument
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("order-service")
 
-CUSTOMER_SERVICE_URL = os.getenv("CUSTOMER_SERVICE_URL", "http://localhost:5001")
+CUSTOMER_SERVICE_URL = os.getenv("CUSTOMER_SERVICE_URL", "http://localhost:5000")
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 

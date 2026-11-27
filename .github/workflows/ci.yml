@@ -10,7 +10,25 @@ on:
       - develop
 
 jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r insights-service/requirements.txt pytest
+
+      - name: Run unit tests (insights-service)
+        run: pytest insights-service -q
+
   build-and-test:
+    needs: unit-tests
     runs-on: ubuntu-latest
 
     steps:
@@ -24,10 +42,10 @@ jobs:
 
       - name: Wait for APIs
         run: |
-          for port in 5001 5002 5003; do
+          for port in 5001 5002 5003 5004; do
             curl --fail --silent --show-error \
               --retry 20 --retry-delay 3 --retry-connrefused \
-              http://localhost:$port/ > /dev/null
+              http://localhost:$port/health/ready > /dev/null
           done
 
       - name: Test Customer Service (seed data)
@@ -69,6 +87,12 @@ jobs:
           done
           echo "Analytics did not receive the event"
           exit 1
+
+      - name: Test Insights Service
+        # Sans clé Groq dans la CI : le rapport est produit en mode dégradé (fallback)
+        run: |
+          curl --fail --silent http://localhost:5004/insights/metrics | jq -e '.kpis.total_orders >= 1'
+          curl --fail --silent http://localhost:5004/insights | jq -e '(.report | length) > 0'
 
       - name: Show Logs on Failure
         if: failure()

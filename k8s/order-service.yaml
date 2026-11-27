@@ -25,12 +25,18 @@ spec:
               value: "kafka:9092"
             - name: MONGO_URI
               value: "mongodb://mongo:27017"
-          readinessProbe:
+          readinessProbe:          # 503 -> le pod est retiré du Service
             httpGet:
-              path: /
+              path: /health/ready
               port: 5000
             initialDelaySeconds: 10
             periodSeconds: 10
+          livenessProbe:           # échec répété -> le pod est redémarré
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 20
+            periodSeconds: 20
 ---
 apiVersion: v1
 kind: Service
