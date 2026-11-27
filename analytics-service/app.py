@@ -7,7 +7,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
 from kafka import KafkaConsumer
 from pymongo import MongoClient
@@ -23,6 +23,7 @@ db = MongoClient(MONGO_URI)["analytics_db"]
 global_col = db["global"]
 products_col = db["products"]
 hourly_col = db["hourly"]
+customers_col = db["customers"]
 
 
 def process(event: dict) -> None:
@@ -48,6 +49,18 @@ def process(event: dict) -> None:
         upsert=True,
     )
     hourly_col.update_one({"_id": hour}, {"$inc": {"orders": 1}}, upsert=True)
+
+    customer_id = event.get("customer_id")
+    if customer_id is not None:
+        customers_col.update_one(
+            {"_id": customer_id},
+            {
+                "$inc": {"orders": 1, "revenue": amount},
+                "$max": {"last_order_at": created_at},
+                "$min": {"first_order_at": created_at},
+            },
+            upsert=True,
+        )
 
     log.info("Order received : %s (product=%s, amount=%.2f)", event.get("order_id"), product, amount)
 
@@ -156,7 +169,24 @@ def stats_products():
     ]
 
 
+@app.get("/stats/customers")
+def stats_customers(limit: int = Query(500, ge=1, le=5000)):
+    """Agrégats par client (identifiants numériques uniquement), utilisés pour la segmentation RFM."""
+    docs = customers_col.find().sort("revenue", -1).limit(limit)
+    return [
+        {
+            "customer_id": d["_id"],
+            "orders": d.get("orders", 0),
+            "revenue": round(d.get("revenue", 0), 2),
+            "first_order_at": d.get("first_order_at"),
+            "last_order_at": d.get("last_order_at"),
+        }
+        for d in docs
+    ]
+
+
 @app.get("/stats/hourly")
-def stats_hourly():
-    docs = hourly_col.find().sort("_id", -1).limit(24)
+def stats_hourly(hours: int = Query(24, ge=1, le=720)):
+    """Commandes par heure (les `hours` dernières heures qui comptent au moins une commande)."""
+    docs = hourly_col.find().sort("_id", -1).limit(hours)
     return [{"hour": d["_id"], "orders": d.get("orders", 0)} for d in docs][::-1]
